@@ -5,7 +5,6 @@ from task_base import SCLTask
 
 class SCLStats(SCLTask):
     ee_rootdir = "projects/SCL/v1"
-    species = 'Panthera_tigris'
     ee_aoi = 'sumatra_poc_aoi'
     # if input lives in ee, it should have an "ee_path" pointing to an ImageCollection/FeatureCollection
     inputs = {
