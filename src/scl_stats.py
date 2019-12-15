@@ -47,8 +47,8 @@ class SCLStats(SCLTask):
     def _scl_path(self, scltype):
         if scltype is None or scltype not in self.inputs:
             raise TypeError("Missing or incorrect scltype for setting scl path")
-        return "{}/{}/scl_poly/{}/scl-species".format(
-            self.ee_rootdir, self.species, self.taskdate
+        return "{}/{}/scl_poly/{}/{}".format(
+            self.ee_rootdir, self.species, self.taskdate, scltype
         )
 
     def scl_path_species(self):
@@ -84,6 +84,7 @@ class SCLStats(SCLTask):
         landscapes = ee.FeatureCollection(self.inputs[landscape_key]["ee_path"])
 
         def get_ls_countries_biomes_pas(ls):
+            # TODO: add unique id from ls when we have it
             ls_total_area = self.rounded_area(ls)
 
             def get_ls_countries_biomes(country):
@@ -163,14 +164,14 @@ class SCLStats(SCLTask):
                 ).map(get_ls_countries_biome_numbers)
 
                 props = {
-                    "scl_country": country.get("iso_alpha2"),
-                    "scl_total_area": ls_total_area,
-                    "scl_country_area": ls_country_area,
+                    "lscountry": country.get("iso_alpha2"),
+                    "ls_total_area": ls_total_area,
+                    "lscountry_area": ls_country_area,
                     "areas": ls_country_biome_numbers,
                 }
                 if landscape_key == "scl_species":
-                    props["scl_name"] = ls.get("name")
-                    props["scl_class"] = ls.get("class")
+                    props["lsname"] = ls.get("name")
+                    props["lsclass"] = ls.get("class")
 
                 return ee.Feature(ls_country, props)
 
