@@ -184,6 +184,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("-d", "--taskdate", default=datetime.now(timezone.utc).date())
     parser.add_argument("-s", "--species", default="Panthera_tigris")
+    parser.add_argument("--scenario", default=SCLTask.CANONICAL)
     options = parser.parse_args()
     sclstats_task = SCLStats(**vars(options))
     sclstats_task.run()
