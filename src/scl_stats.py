@@ -44,25 +44,6 @@ class SCLStats(SCLTask):
         },
     }
 
-    def _scl_path(self, scltype):
-        if scltype is None or scltype not in self.inputs:
-            raise TypeError("Missing or incorrect scltype for setting scl path")
-        return "{}/{}/scl_poly/{}/{}".format(
-            self.ee_rootdir, self.species, self.taskdate, scltype
-        )
-
-    def scl_path_species(self):
-        return self._scl_path("scl_species")
-
-    def scl_path_restoration(self):
-        return self._scl_path("scl_restoration")
-
-    def scl_path_survey(self):
-        return self._scl_path("scl_survey")
-
-    def scl_path_fragment(self):
-        return self._scl_path("scl_fragment")
-
     def rounded_area(self, geom):
         return (
             geom.area(self.error_margin, self.area_proj)
@@ -170,8 +151,12 @@ class SCLStats(SCLTask):
                     "areas": ls_country_biome_numbers,
                 }
                 if landscape_key == "scl_species":
-                    props["lsname"] = ls.get("name")
-                    props["lsclass"] = ls.get("class")
+                    _name = ls.get("name")
+                    _class = ls.get("class")
+                    if _name is not None:
+                        props["lsname"] = _name
+                    if _class is not None:
+                        props["lsclass"] = _class
 
                 return ee.Feature(ls_country, props)
 
