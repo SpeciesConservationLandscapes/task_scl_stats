@@ -9,22 +9,22 @@ class SCLStats(SCLTask):
     inputs = {
         "scl_species": {
             "ee_type": SCLTask.FEATURECOLLECTION,
-            "ee_path": "scl_path_species",
+            "ee_path": f"scl_path_{SCLTask.SPECIES}",
             "maxage": 1 / 365,  # years
         },
         "scl_restoration": {
             "ee_type": SCLTask.FEATURECOLLECTION,
-            "ee_path": "scl_path_restoration",
+            "ee_path": f"scl_path_{SCLTask.RESTORATION}",
             "maxage": 1 / 365,
         },
         "scl_survey": {
             "ee_type": SCLTask.FEATURECOLLECTION,
-            "ee_path": "scl_path_survey",
+            "ee_path": f"scl_path_{SCLTask.SURVEY}",
             "maxage": 1 / 365,
         },
         "scl_fragment": {
             "ee_type": SCLTask.FEATURECOLLECTION,
-            "ee_path": "scl_path_fragment",
+            "ee_path": f"scl_path_{SCLTask.FRAGMENT}",
             "maxage": 1 / 365,
         },
         "countries": {
@@ -166,14 +166,14 @@ class SCLStats(SCLTask):
 
         ls_countries_biomes_pas = landscapes.map(get_ls_countries_biomes_pas).flatten()
 
-        blob = "ls_stats/{}/{}/{}".format(self.species, self.taskdate, landscape_key)
+        blob = f"ls_stats/{self.species}/{self.taskdate}/{landscape_key}/{self.scenario}"
         self.export_fc_cloudstorage(ls_countries_biomes_pas, "scl-pipeline", blob)
 
     def calc(self):
-        self.calc_landscapes("scl_species")
-        self.calc_landscapes("scl_restoration")
-        self.calc_landscapes("scl_survey")
-        self.calc_landscapes("scl_fragment")
+        self.calc_landscapes(f"scl_{SCLTask.SPECIES}")
+        self.calc_landscapes(f"scl_{SCLTask.RESTORATION}")
+        self.calc_landscapes(f"scl_{SCLTask.SURVEY}")
+        self.calc_landscapes(f"scl_{SCLTask.FRAGMENT}")
 
     def check_inputs(self):
         super().check_inputs()
