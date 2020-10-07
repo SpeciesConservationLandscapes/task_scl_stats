@@ -45,18 +45,23 @@ class SCLStats(SCLTask):
     }
 
     def rounded_area(self, geom):
+        stats = ee.Image.pixelArea().reduceRegion(
+            reducer=ee.Reducer.sum(),
+            geometry=geom,
+            scale=30,  # deliberately not using self.scale for greater area precision
+            maxPixels=self.ee_max_pixels
+        )
         return (
-            geom.area(self.error_margin, self.area_proj)
+            ee.Number(stats.get("area"))
                 .multiply(0.000001)
                 .multiply(10)
                 .round()
-                .multiply(0.01)
+                .multiply(0.1)
         )
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.error_margin = ee.ErrorMargin(1)
-        self.area_proj = "EPSG:5070"
         self.countries = ee.FeatureCollection(self.inputs["countries"]["ee_path"])
         self.ecoregions = ee.FeatureCollection(self.inputs["ecoregions"]["ee_path"])
         self.pas = ee.FeatureCollection(self.inputs["pas"]["ee_path"])
@@ -66,7 +71,7 @@ class SCLStats(SCLTask):
 
         def get_ls_countries_biomes_pas(ls):
             # TODO: add unique id from ls when we have it
-            ls_total_area = self.rounded_area(ls)
+            ls_total_area = self.rounded_area(ls.geometry())
 
             def get_ls_countries_biomes(country):
                 ls_country = ls.geometry().intersection(
@@ -166,7 +171,7 @@ class SCLStats(SCLTask):
 
         ls_countries_biomes_pas = landscapes.map(get_ls_countries_biomes_pas).flatten()
 
-        blob = f"ls_stats/{self.species}/{self.taskdate}/{landscape_key}/{self.scenario}"
+        blob = f"ls_stats/{self.species}/{self.scenario}/{self.taskdate}/{landscape_key}"
         self.export_fc_cloudstorage(ls_countries_biomes_pas, "scl-pipeline", blob)
 
     def calc(self):
