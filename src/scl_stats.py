@@ -9,22 +9,22 @@ class SCLStats(SCLTask):
     inputs = {
         "scl_species": {
             "ee_type": SCLTask.FEATURECOLLECTION,
-            "ee_path": "scl_path_species",
+            "ee_path": f"scl_path_{SCLTask.SPECIES}",
             "maxage": 1 / 365,  # years
         },
         "scl_restoration": {
             "ee_type": SCLTask.FEATURECOLLECTION,
-            "ee_path": "scl_path_restoration",
+            "ee_path": f"scl_path_{SCLTask.RESTORATION}",
             "maxage": 1 / 365,
         },
         "scl_survey": {
             "ee_type": SCLTask.FEATURECOLLECTION,
-            "ee_path": "scl_path_survey",
+            "ee_path": f"scl_path_{SCLTask.SURVEY}",
             "maxage": 1 / 365,
         },
         "scl_fragment": {
             "ee_type": SCLTask.FEATURECOLLECTION,
-            "ee_path": "scl_path_fragment",
+            "ee_path": f"scl_path_{SCLTask.FRAGMENT}",
             "maxage": 1 / 365,
         },
         "countries": {
@@ -44,38 +44,24 @@ class SCLStats(SCLTask):
         },
     }
 
-    def _scl_path(self, scltype):
-        if scltype is None or scltype not in self.inputs:
-            raise TypeError("Missing or incorrect scltype for setting scl path")
-        return "{}/{}/scl_poly/{}/{}".format(
-            self.ee_rootdir, self.species, self.taskdate, scltype
-        )
-
-    def scl_path_species(self):
-        return self._scl_path("scl_species")
-
-    def scl_path_restoration(self):
-        return self._scl_path("scl_restoration")
-
-    def scl_path_survey(self):
-        return self._scl_path("scl_survey")
-
-    def scl_path_fragment(self):
-        return self._scl_path("scl_fragment")
-
     def rounded_area(self, geom):
+        stats = ee.Image.pixelArea().reduceRegion(
+            reducer=ee.Reducer.sum(),
+            geometry=geom,
+            scale=30,  # deliberately not using self.scale for greater area precision
+            maxPixels=self.ee_max_pixels
+        )
         return (
-            geom.area(self.error_margin, self.area_proj)
+            ee.Number(stats.get("area"))
                 .multiply(0.000001)
                 .multiply(10)
                 .round()
-                .multiply(0.01)
+                .multiply(0.1)
         )
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.error_margin = ee.ErrorMargin(1)
-        self.area_proj = "EPSG:5070"
         self.countries = ee.FeatureCollection(self.inputs["countries"]["ee_path"])
         self.ecoregions = ee.FeatureCollection(self.inputs["ecoregions"]["ee_path"])
         self.pas = ee.FeatureCollection(self.inputs["pas"]["ee_path"])
@@ -85,7 +71,7 @@ class SCLStats(SCLTask):
 
         def get_ls_countries_biomes_pas(ls):
             # TODO: add unique id from ls when we have it
-            ls_total_area = self.rounded_area(ls)
+            ls_total_area = self.rounded_area(ls.geometry())
 
             def get_ls_countries_biomes(country):
                 ls_country = ls.geometry().intersection(
@@ -170,8 +156,12 @@ class SCLStats(SCLTask):
                     "areas": ls_country_biome_numbers,
                 }
                 if landscape_key == "scl_species":
-                    props["lsname"] = ls.get("name")
-                    props["lsclass"] = ls.get("class")
+                    _name = ls.get("name")
+                    _class = ls.get("class")
+                    if _name is not None:
+                        props["lsname"] = _name
+                    if _class is not None:
+                        props["lsclass"] = _class
 
                 return ee.Feature(ls_country, props)
 
@@ -181,14 +171,14 @@ class SCLStats(SCLTask):
 
         ls_countries_biomes_pas = landscapes.map(get_ls_countries_biomes_pas).flatten()
 
-        blob = "ls_stats/{}/{}/{}".format(self.species, self.taskdate, landscape_key)
+        blob = f"ls_stats/{self.species}/{self.scenario}/{self.taskdate}/{landscape_key}"
         self.export_fc_cloudstorage(ls_countries_biomes_pas, "scl-pipeline", blob)
 
     def calc(self):
-        self.calc_landscapes("scl_species")
-        self.calc_landscapes("scl_restoration")
-        self.calc_landscapes("scl_survey")
-        self.calc_landscapes("scl_fragment")
+        self.calc_landscapes(f"scl_{SCLTask.SPECIES}")
+        self.calc_landscapes(f"scl_{SCLTask.RESTORATION}")
+        self.calc_landscapes(f"scl_{SCLTask.SURVEY}")
+        self.calc_landscapes(f"scl_{SCLTask.FRAGMENT}")
 
     def check_inputs(self):
         super().check_inputs()
@@ -199,6 +189,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("-d", "--taskdate", default=datetime.now(timezone.utc).date())
     parser.add_argument("-s", "--species", default="Panthera_tigris")
+    parser.add_argument("--scenario", default=SCLTask.CANONICAL)
     options = parser.parse_args()
     sclstats_task = SCLStats(**vars(options))
     sclstats_task.run()
