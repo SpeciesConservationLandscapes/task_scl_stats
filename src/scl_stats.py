@@ -49,14 +49,14 @@ class SCLStats(SCLTask):
             reducer=ee.Reducer.sum(),
             geometry=geom,
             scale=30,  # deliberately not using self.scale for greater area precision
-            maxPixels=self.ee_max_pixels
+            maxPixels=self.ee_max_pixels,
         )
         return (
             ee.Number(stats.get("area"))
-                .multiply(0.000001)
-                .multiply(10)
-                .round()
-                .multiply(0.1)
+            .multiply(0.000001)
+            .multiply(10)
+            .round()
+            .multiply(0.1)
         )
 
     def __init__(self, *args, **kwargs):
@@ -67,7 +67,12 @@ class SCLStats(SCLTask):
         self.pas = ee.FeatureCollection(self.inputs["pas"]["ee_path"])
 
     def calc_landscapes(self, landscape_key):
-        landscapes = ee.FeatureCollection(self.inputs[landscape_key]["ee_path"])
+        landscapes, landscapes_date = self.get_most_recent_featurecollection(
+            self.inputs[landscape_key]["ee_path"]
+        )
+
+        if landscapes is None:
+            return
 
         def get_ls_countries_biomes_pas(ls):
             # TODO: add unique id from ls when we have it
@@ -87,16 +92,16 @@ class SCLStats(SCLTask):
                     )
                     biome_geometry = (
                         biome.union()
-                            .geometry()
-                            .intersection(ls_country, self.error_margin)
+                        .geometry()
+                        .intersection(ls_country, self.error_margin)
                     )
                     biome_name = ee.Feature(biome.first()).get("BIOME_NAME")
 
                     ls_country_biome_pas = self.pas.filterBounds(biome_geometry)
                     ls_country_biome_protected = (
                         ls_country_biome_pas.union()
-                            .geometry()
-                            .intersection(biome_geometry, self.error_margin)
+                        .geometry()
+                        .intersection(biome_geometry, self.error_margin)
                     )
                     ls_country_biome_unprotected = ls_country.difference(
                         ls_country_biome_protected
@@ -171,7 +176,9 @@ class SCLStats(SCLTask):
 
         ls_countries_biomes_pas = landscapes.map(get_ls_countries_biomes_pas).flatten()
 
-        blob = f"ls_stats/{self.species}/{self.scenario}/{self.taskdate}/{landscape_key}"
+        blob = (
+            f"ls_stats/{self.species}/{self.scenario}/{self.taskdate}/{landscape_key}"
+        )
         self.export_fc_cloudstorage(ls_countries_biomes_pas, "scl-pipeline", blob)
 
     def calc(self):
