@@ -179,7 +179,7 @@ class SCLStats(SCLTask):
         blob = (
             f"ls_stats/{self.species}/{self.scenario}/{self.taskdate}/{landscape_key}"
         )
-        self.export_fc_cloudstorage(ls_countries_biomes_pas, "scl-pipeline", blob)
+        self.table2storage(ls_countries_biomes_pas, "scl-pipeline", blob)
 
     def calc(self):
         self.calc_landscapes(f"scl_{SCLTask.SPECIES}")
