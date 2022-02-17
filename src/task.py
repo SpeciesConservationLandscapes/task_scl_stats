@@ -7,11 +7,6 @@ from task_base import SCLTask
 class SCLStats(SCLTask):
     ee_rootdir = "projects/SCL/v1"
     inputs = {
-        "historical_range": {
-            "ee_type": SCLTask.IMAGE,
-            "ee_path": "historical_range_path",
-            "static": True,
-        },
         "scl_species": {
             "ee_type": SCLTask.FEATURECOLLECTION,
             "ee_path": f"scl_path_{SCLTask.SPECIES}",
@@ -31,21 +26,6 @@ class SCLStats(SCLTask):
             "ee_type": SCLTask.FEATURECOLLECTION,
             "ee_path": f"scl_path_{SCLTask.FRAGMENT}",
             "maxage": 1 / 365,
-        },
-        "countries": {
-            "ee_type": SCLTask.FEATURECOLLECTION,
-            "ee_path": "USDOS/LSIB/2013",
-            "maxage": 10,
-        },
-        "ecoregions": {
-            "ee_type": SCLTask.FEATURECOLLECTION,
-            "ee_path": "RESOLVE/ECOREGIONS/2017",
-            "maxage": 5,
-        },
-        "pas": {
-            "ee_type": SCLTask.FEATURECOLLECTION,
-            "ee_path": "WCMC/WDPA/current/polygons",
-            "maxage": 1,
         },
     }
 
@@ -67,21 +47,6 @@ class SCLStats(SCLTask):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.error_margin = ee.ErrorMargin(1)
-        self.historical_range_fc = ee.FeatureCollection(
-            self.inputs["historical_range"]["ee_path"]
-        )
-        self.countries = ee.FeatureCollection(self.inputs["countries"]["ee_path"])
-        self.ecoregions = ee.FeatureCollection(self.inputs["ecoregions"]["ee_path"])
-        taskyear = ee.Date(self.taskdate.strftime(self.DATE_FORMAT)).get("year")
-        self.pas = (
-            ee.FeatureCollection(self.inputs["pas"]["ee_path"])
-            .filterBounds(self.historical_range_fc.geometry())
-            .filter(ee.Filter.neq("STATUS", "Proposed"))
-            .filter(ee.Filter.lte("STATUS_YR", taskyear))
-        )
-
-    def historical_range_path(self):
-        return f"{self.speciesdir}/historical_range"
 
     def calc_landscapes(self, landscape_key):
         landscapes, landscapes_date = self.get_most_recent_featurecollection(
