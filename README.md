@@ -1,7 +1,10 @@
 Species Conservation Landscapes areal statistics calculation task
 -----------------------------------------------------------------
 
-Task for calculating SCL zonal stats by country, protected status, and habitat type
+Task for calculating zonal statistics for each of the types assigned to species habitat by the 
+`scl_classification` task by country, protected status, biome, and Key Biodiversity Area (KBA). 
+Output intersected polygons with statistics are exported to GeoJSON files in Google Storage, for ingestion
+by the SCL API.
 
 ## Usage
 
@@ -18,3 +21,11 @@ optional arguments:
   --scenario SCENARIO
   --overwrite           overwrite existing outputs instead of incrementing
 ```
+
+### License
+Copyright (C) 2022 Wildlife Conservation Society
+The files in this repository  are part of the task framework for calculating 
+Human Impact Index and Species Conservation Landscapes (https://github.com/SpeciesConservationLandscapes) 
+and are released under the GPL license:
+https://www.gnu.org/licenses/#GPL
+See [LICENSE](./LICENSE) for details.
