@@ -22,10 +22,25 @@ class SCLStats(SCLTask):
             "ee_path": f"scl_path_{SCLTask.SURVEY}",
             "maxage": 1 / 365,
         },
-        "scl_fragment": {
+        "scl_species_fragment": {
             "ee_type": SCLTask.FEATURECOLLECTION,
-            "ee_path": f"scl_path_{SCLTask.FRAGMENT}",
+            "ee_path": f"scl_path_{SCLTask.SPECIES}_{SCLTask.FRAGMENT}",
+            "maxage": 1 / 365,  # years
+        },
+        "scl_restoration_fragment": {
+            "ee_type": SCLTask.FEATURECOLLECTION,
+            "ee_path": f"scl_path_{SCLTask.RESTORATION}_{SCLTask.FRAGMENT}",
             "maxage": 1 / 365,
+        },
+        "scl_survey_fragment": {
+            "ee_type": SCLTask.FEATURECOLLECTION,
+            "ee_path": f"scl_path_{SCLTask.SURVEY}_{SCLTask.FRAGMENT}",
+            "maxage": 1 / 365,
+        },
+        "kbas": {
+            "ee_type": SCLTask.FEATURECOLLECTION,
+            "ee_path": "projects/SCL/v1/source/KBAsGlobal_20200301",
+            "static": True,
         },
     }
 
@@ -46,7 +61,13 @@ class SCLStats(SCLTask):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        if self.scenario != self.CANONICAL:
+            raise NotImplementedError(
+                "Generating statistics for non-canonical species landscape calculations not implemented until "
+                "there is a consumer or use case defined for it, as SCL API ingestion is for canonical."
+            )
         self.error_margin = ee.ErrorMargin(1)
+        self.kbas = ee.FeatureCollection(self.inputs["kbas"]["ee_path"])
 
     def calc_landscapes(self, landscape_key):
         landscapes, landscapes_date = self.get_most_recent_featurecollection(
@@ -115,16 +136,47 @@ class SCLStats(SCLTask):
                             }
                         )
 
-                    ls_country_biome_pas = ee.List(
+                    ls_country_biome_pa_areas = ee.List(
                         ee.Dictionary(
                             ls_country_biome_pas.aggregate_histogram("WDPAID")
                         ).keys()
                     ).map(get_ls_country_biome_pas)
 
+                    ls_country_biome_kbas = self.kbas.filterBounds(biome_geometry)
+
+                    def get_ls_country_biome_kbas(kba_id):
+                        ls_country_biome_kba_id = ee.Number.parse(kba_id).int()
+                        kba = ls_country_biome_kbas.filter(
+                            ee.Filter.eq("SitRecID", ls_country_biome_kba_id)
+                        )
+                        ls_country_biome_kba_name = ee.Feature(kba.first()).get(
+                            "IntName"
+                        )
+                        ls_country_biome_kba_area = self.rounded_area(
+                            kba.geometry().intersection(
+                                biome_geometry, self.error_margin
+                            )
+                        )
+
+                        return ee.Dictionary(
+                            {
+                                "kbaname": ls_country_biome_kba_name,
+                                "kbaid": ls_country_biome_kba_id,
+                                "kbaarea": ls_country_biome_kba_area,
+                            }
+                        )
+
+                    ls_country_biome_kba_areas = ee.List(
+                        ee.Dictionary(
+                            ls_country_biome_kbas.aggregate_histogram("SitRecID")
+                        ).keys()
+                    ).map(get_ls_country_biome_kbas)
+
                     return ee.Dictionary(
                         {
                             "biome": {"biomeid": biome_num, "biomename": biome_name},
-                            "pas": ls_country_biome_pas,
+                            "pas": ls_country_biome_pa_areas,
+                            "kbas": ls_country_biome_kba_areas,
                             "protected": ls_country_biome_protected_area,
                             "unprotected": ls_country_biome_unprotected_area,
                         }
@@ -137,7 +189,8 @@ class SCLStats(SCLTask):
                 ).map(get_ls_countries_biome_numbers)
 
                 props = {
-                    "lscountry": country.get("iso_alpha2"),
+                    "lsid": ls.get("dissolved_poly_id"),
+                    "lscountry": country.get("ISO"),
                     "ls_total_area": ls_total_area,
                     "lscountry_area": ls_country_area,
                     "areas": ls_country_biome_numbers,
@@ -167,7 +220,9 @@ class SCLStats(SCLTask):
         self.calc_landscapes(f"scl_{SCLTask.SPECIES}")
         self.calc_landscapes(f"scl_{SCLTask.RESTORATION}")
         self.calc_landscapes(f"scl_{SCLTask.SURVEY}")
-        self.calc_landscapes(f"scl_{SCLTask.FRAGMENT}")
+        self.calc_landscapes(f"scl_{SCLTask.SPECIES}_{SCLTask.FRAGMENT}")
+        self.calc_landscapes(f"scl_{SCLTask.RESTORATION}_{SCLTask.FRAGMENT}")
+        self.calc_landscapes(f"scl_{SCLTask.SURVEY}_{SCLTask.FRAGMENT}")
 
     def check_inputs(self):
         super().check_inputs()
