@@ -1,6 +1,5 @@
 import argparse
 import ee
-from datetime import datetime, timezone
 from task_base import SCLTask
 
 
@@ -78,7 +77,6 @@ class SCLStats(SCLTask):
             return
 
         def get_ls_countries_biomes_pas(ls):
-            # TODO: add unique id from ls when we have it
             ls_total_area = self.rounded_area(ls.geometry())
 
             def get_ls_countries_biomes(country):
@@ -214,9 +212,36 @@ class SCLStats(SCLTask):
         blob = (
             f"ls_stats/{self.species}/{self.scenario}/{self.taskdate}/{landscape_key}"
         )
-        self.table2storage(ls_countries_biomes_pas, "scl-pipeline", blob)
+        self.table2storage(ls_countries_biomes_pas, self.DEFAULT_BUCKET, blob)
+
+    def calc_country_historical_range(self):
+        bucket = self.gcsclient.get_bucket(self.DEFAULT_BUCKET)
+        blob = f"ls_stats/{self.species}/country_historical_range"
+        if bucket.get_blob(f"{blob}.geojson"):
+            print("Skipping country / historical range calculation (already exists")
+            return
+
+        historical_geom = self.historical_range_fc.first().geometry()
+
+        def get_country_historical_range(country):
+            country_hr = country.geometry().intersection(
+                historical_geom, self.error_margin
+            )
+            country_hr_area = self.rounded_area(country_hr)
+            props = {
+                "country": country.get("ISO"),
+                "area": country_hr_area,
+            }
+
+            return ee.Feature(country_hr, props)
+
+        country_hrs = self.countries.filterBounds(historical_geom).map(
+            get_country_historical_range
+        )
+        self.table2storage(country_hrs, self.DEFAULT_BUCKET, blob)
 
     def calc(self):
+        self.calc_country_historical_range()
         self.calc_landscapes(f"scl_{SCLTask.SPECIES}")
         self.calc_landscapes(f"scl_{SCLTask.RESTORATION}")
         self.calc_landscapes(f"scl_{SCLTask.SURVEY}")
