@@ -104,14 +104,24 @@ class SCLStats(SCLTask):
                         .geometry()
                         .intersection(biome_geometry, self.error_margin)
                     )
-                    ls_country_biome_unprotected = ls_country.difference(
-                        ls_country_biome_protected
-                    )
                     ls_country_biome_protected_area = self.rounded_area(
                         ls_country_biome_protected
                     )
                     ls_country_biome_unprotected_area = self.rounded_area(
-                        ls_country_biome_unprotected
+                        biome_geometry.difference(ls_country_biome_protected)
+                    )
+
+                    ls_country_biome_kbas = self.kbas.filterBounds(biome_geometry)
+                    ls_country_biome_kbageom = (
+                        ls_country_biome_kbas.union()
+                        .geometry()
+                        .intersection(biome_geometry, self.error_margin)
+                    )
+                    ls_country_biome_kba_area = self.rounded_area(
+                        ls_country_biome_kbageom
+                    )
+                    ls_country_biome_nonkba_area = self.rounded_area(
+                        biome_geometry.difference(ls_country_biome_kba_area)
                     )
 
                     def get_ls_country_biome_pas(pa_id):
@@ -177,6 +187,8 @@ class SCLStats(SCLTask):
                             "kbas": ls_country_biome_kba_areas,
                             "protected": ls_country_biome_protected_area,
                             "unprotected": ls_country_biome_unprotected_area,
+                            "kba_area": ls_country_biome_kba_area,
+                            "kba_non_area": ls_country_biome_nonkba_area,
                         }
                     )
 
