@@ -6,6 +6,11 @@ from task_base import SCLTask
 class SCLStats(SCLTask):
     ee_rootdir = "projects/SCL/v1"
     inputs = {
+        "scl_image": {
+            "ee_type": SCLTask.IMAGECOLLECTION,
+            "ee_path": "scl_image_path",
+            "maxage": 1 / 365,
+        },
         "scl_species": {
             "ee_type": SCLTask.FEATURECOLLECTION,
             "ee_path": f"scl_path_{SCLTask.SPECIES}",
@@ -43,20 +48,18 @@ class SCLStats(SCLTask):
         },
     }
 
-    def rounded_area(self, geom):
-        stats = ee.Image.pixelArea().reduceRegion(
+    def rounded_habitat_area(self, geom, img=None, band=None, scale=None):
+        img = img or self.scl_image.select("eff_pot_hab_area")  # assumes unit=km2
+        band = band or "eff_pot_hab_area"
+        scale = scale or self.scale
+
+        stats = img.reduceRegion(
             reducer=ee.Reducer.sum(),
             geometry=geom,
-            scale=30,  # deliberately not using self.scale for greater area precision
+            scale=scale,
             maxPixels=self.ee_max_pixels,
         )
-        return (
-            ee.Number(stats.get("area"))
-            .multiply(0.000001)
-            .multiply(10)
-            .round()
-            .multiply(0.1)
-        )
+        return ee.Number(stats.get(band)).multiply(10).round().multiply(0.1)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -66,7 +69,13 @@ class SCLStats(SCLTask):
                 "there is a consumer or use case defined for it, as SCL API ingestion is for canonical."
             )
         self.error_margin = ee.ErrorMargin(1)
+        self.scl_image, _ = self.get_most_recent_image(
+            ee.ImageCollection(self.inputs["scl_image"]["ee_path"])
+        )
         self.kbas = ee.FeatureCollection(self.inputs["kbas"]["ee_path"])
+
+    def scl_image_path(self):
+        return f"{self.ee_rootdir}/pothab/scl_image"
 
     def calc_landscapes(self, landscape_key):
         landscapes, landscapes_date = self.get_most_recent_featurecollection(
@@ -77,13 +86,13 @@ class SCLStats(SCLTask):
             return
 
         def get_ls_countries_biomes_pas(ls):
-            ls_total_area = self.rounded_area(ls.geometry())
+            ls_total_area = self.rounded_habitat_area(ls.geometry())
 
             def get_ls_countries_biomes(country):
                 ls_country = ls.geometry().intersection(
                     country.geometry(), self.error_margin
                 )
-                ls_country_area = self.rounded_area(ls_country)
+                ls_country_area = self.rounded_habitat_area(ls_country)
                 ls_country_biomes = self.ecoregions.filterBounds(ls_country)
 
                 def get_ls_countries_biome_numbers(biome_num):
@@ -104,10 +113,10 @@ class SCLStats(SCLTask):
                         .geometry()
                         .intersection(biome_geometry, self.error_margin)
                     )
-                    ls_country_biome_protected_area = self.rounded_area(
+                    ls_country_biome_protected_area = self.rounded_habitat_area(
                         ls_country_biome_protected
                     )
-                    ls_country_biome_unprotected_area = self.rounded_area(
+                    ls_country_biome_unprotected_area = self.rounded_habitat_area(
                         biome_geometry.difference(ls_country_biome_protected)
                     )
 
@@ -117,10 +126,10 @@ class SCLStats(SCLTask):
                         .geometry()
                         .intersection(biome_geometry, self.error_margin)
                     )
-                    ls_country_biome_kba_area = self.rounded_area(
+                    ls_country_biome_kba_area = self.rounded_habitat_area(
                         ls_country_biome_kbageom
                     )
-                    ls_country_biome_nonkba_area = self.rounded_area(
+                    ls_country_biome_nonkba_area = self.rounded_habitat_area(
                         biome_geometry.difference(ls_country_biome_kbageom)
                     )
 
@@ -130,7 +139,7 @@ class SCLStats(SCLTask):
                             ee.Filter.eq("WDPAID", ls_country_biome_pa_id)
                         )
                         ls_country_biome_pa_name = ee.Feature(pa.first()).get("NAME")
-                        ls_country_biome_pa_area = self.rounded_area(
+                        ls_country_biome_pa_area = self.rounded_habitat_area(
                             pa.geometry().intersection(
                                 biome_geometry, self.error_margin
                             )
@@ -160,7 +169,7 @@ class SCLStats(SCLTask):
                         ls_country_biome_kba_name = ee.Feature(kba.first()).get(
                             "IntName"
                         )
-                        ls_country_biome_kba_area = self.rounded_area(
+                        ls_country_biome_kba_area = self.rounded_habitat_area(
                             kba.geometry().intersection(
                                 biome_geometry, self.error_margin
                             )
@@ -182,13 +191,14 @@ class SCLStats(SCLTask):
 
                     return ee.Dictionary(
                         {
-                            "biome": {"biomeid": biome_num, "biomename": biome_name},
-                            "pas": ls_country_biome_pa_areas,
-                            "kbas": ls_country_biome_kba_areas,
+                            "biomeid": biome_num,
+                            "biomename": biome_name,
                             "protected": ls_country_biome_protected_area,
                             "unprotected": ls_country_biome_unprotected_area,
                             "kba_area": ls_country_biome_kba_area,
                             "nonkba_area": ls_country_biome_nonkba_area,
+                            "pas": ls_country_biome_pa_areas,
+                            "kbas": ls_country_biome_kba_areas,
                         }
                     )
 
@@ -239,7 +249,8 @@ class SCLStats(SCLTask):
             country_hr = country.geometry().intersection(
                 historical_geom, self.error_margin
             )
-            country_hr_area = self.rounded_area(country_hr)
+            area = ee.Image.pixelArea().divide(1000000).updateMask(self.watermask)
+            country_hr_area = self.rounded_habitat_area(country_hr, area, "area", 30)
             props = {
                 "country": country.get("ISO"),
                 "area": country_hr_area,
