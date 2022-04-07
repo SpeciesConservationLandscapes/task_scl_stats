@@ -121,7 +121,7 @@ class SCLStats(SCLTask):
                         ls_country_biome_kbageom
                     )
                     ls_country_biome_nonkba_area = self.rounded_area(
-                        biome_geometry.difference(ls_country_biome_kba_area)
+                        biome_geometry.difference(ls_country_biome_kbageom)
                     )
 
                     def get_ls_country_biome_pas(pa_id):
@@ -188,7 +188,7 @@ class SCLStats(SCLTask):
                             "protected": ls_country_biome_protected_area,
                             "unprotected": ls_country_biome_unprotected_area,
                             "kba_area": ls_country_biome_kba_area,
-                            "kba_non_area": ls_country_biome_nonkba_area,
+                            "nonkba_area": ls_country_biome_nonkba_area,
                         }
                     )
 
@@ -230,7 +230,7 @@ class SCLStats(SCLTask):
         bucket = self.gcsclient.get_bucket(self.DEFAULT_BUCKET)
         blob = f"ls_stats/{self.species}/country_historical_range"
         if bucket.get_blob(f"{blob}.geojson"):
-            print("Skipping country / historical range calculation (already exists")
+            print("Skipping country / historical range calculation (already exists)")
             return
 
         historical_geom = self.historical_range_fc.first().geometry()
