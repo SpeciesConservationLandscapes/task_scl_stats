@@ -210,7 +210,7 @@ class SCLStats(SCLTask):
 
                 props = {
                     "lsid": ls.get("dissolved_poly_id"),
-                    "lscountry": country.get("ISO"),
+                    "lscountry": country.get("iso2"),
                     "ls_total_area": ls_total_area,
                     "lscountry_area": ls_country_area,
                     "areas": ls_country_biome_numbers,
@@ -243,7 +243,7 @@ class SCLStats(SCLTask):
             print("Skipping country / historical range calculation (already exists)")
             return
 
-        historical_geom = self.historical_range_fc.first().geometry()
+        historical_geom = self.historical_range_fc.geometry()
 
         def get_country_historical_range(country):
             country_hr = country.geometry().intersection(
@@ -252,25 +252,23 @@ class SCLStats(SCLTask):
             area = ee.Image.pixelArea().divide(1000000).updateMask(self.watermask)
             country_hr_area = self.rounded_habitat_area(country_hr, area, "area", 30)
             props = {
-                "country": country.get("ISO"),
+                "country": country.get("iso2"),
                 "area": country_hr_area,
             }
 
             return ee.Feature(country_hr, props)
 
-        country_hrs = self.countries.filterBounds(historical_geom).map(
-            get_country_historical_range
-        )
+        country_hrs = self.countries.map(get_country_historical_range)
         self.table2storage(country_hrs, self.DEFAULT_BUCKET, blob)
 
     def calc(self):
         self.calc_country_historical_range()
-        self.calc_landscapes(f"scl_{SCLTask.SPECIES}")
-        self.calc_landscapes(f"scl_{SCLTask.RESTORATION}")
-        self.calc_landscapes(f"scl_{SCLTask.SURVEY}")
-        self.calc_landscapes(f"scl_{SCLTask.SPECIES}_{SCLTask.FRAGMENT}")
-        self.calc_landscapes(f"scl_{SCLTask.RESTORATION}_{SCLTask.FRAGMENT}")
-        self.calc_landscapes(f"scl_{SCLTask.SURVEY}_{SCLTask.FRAGMENT}")
+        self.calc_landscapes(f"scl_{self.SPECIES}")
+        self.calc_landscapes(f"scl_{self.RESTORATION}")
+        self.calc_landscapes(f"scl_{self.SURVEY}")
+        self.calc_landscapes(f"scl_{self.SPECIES}_{self.FRAGMENT}")
+        self.calc_landscapes(f"scl_{self.RESTORATION}_{self.FRAGMENT}")
+        self.calc_landscapes(f"scl_{self.SURVEY}_{self.FRAGMENT}")
 
     def check_inputs(self):
         super().check_inputs()
