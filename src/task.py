@@ -11,6 +11,16 @@ class SCLStats(SCLTask):
             "ee_path": "scl_image_path",
             "maxage": 1 / 365,
         },
+        "structural_habitat": {
+            "ee_type": SCLTask.IMAGECOLLECTION,
+            "ee_path": "structural_habitat_path",
+            "maxage": 1 / 365,
+        },
+        "occupied_habitat_image": {
+            "ee_type": SCLTask.IMAGECOLLECTION,
+            "ee_path": "occupied_image_habitat_path",
+            "maxage": 1 / 365,
+        },
         "scl_species": {
             "ee_type": SCLTask.FEATURECOLLECTION,
             "ee_path": f"scl_path_{SCLTask.SPECIES}",
@@ -46,6 +56,11 @@ class SCLStats(SCLTask):
             "ee_path": "projects/SCL/v1/source/KBAsGlobal_20200301",
             "static": True,
         },
+        "states": {
+            "ee_type": SCLTask.FEATURECOLLECTION,
+            "ee_path": "projects/SCL/v1/source/gadm404_state_simp",
+            "static": True,
+        },
     }
 
     def rounded_habitat_area(self, geom, img=None, band=None, scale=None):
@@ -72,10 +87,24 @@ class SCLStats(SCLTask):
         self.scl_image, _ = self.get_most_recent_image(
             ee.ImageCollection(self.inputs["scl_image"]["ee_path"])
         )
+        self.structural_habitat, _ = self.get_most_recent_image(
+            ee.ImageCollection(self.inputs["structural_habitat"]["ee_path"])
+        )
+        self.occupied_habitat_image, _ = self.get_most_recent_image(
+            ee.ImageCollection(self.inputs["occupied_habitat_image"]["ee_path"])
+        )
         self.kbas = ee.FeatureCollection(self.inputs["kbas"]["ee_path"])
+        self.states = ee.FeatureCollection(self.inputs["states"]["ee_path"])
+        self.area_image = None
 
     def scl_image_path(self):
         return f"{self.ee_rootdir}/pothab/scl_image"
+
+    def structural_habitat_path(self):
+        return f"{self.ee_rootdir}/structural_habitat"
+
+    def occupied_image_habitat_path(self):
+        return f"{self.ee_rootdir}/pothab/occupied_habitat"
 
     def calc_landscapes(self, landscape_key):
         landscapes, landscapes_date = self.get_most_recent_featurecollection(
@@ -236,7 +265,37 @@ class SCLStats(SCLTask):
         )
         self.table2storage(ls_countries_biomes_pas, self.DEFAULT_BUCKET, blob)
 
+    def calc_state_areas(self):
+        bucket = self.gcsclient.get_bucket(self.DEFAULT_BUCKET)
+        blob = f"ls_stats/{self.species}/{self.scenario}/{self.taskdate}/scl_states"
+
+        def _round(feat):
+            geom = feat.geometry()
+            ind_range = feat.get("indigenous_range_area")
+            eph = feat.get("eff_pot_hab_area")
+            ceph = feat.get("connected_eff_pot_hab_area")
+            oeph = feat.get("occupied_eff_pot_hab_area")
+            strh = feat.get("str_hab_area")
+            return feat.set(
+                {
+                    "indigenous_range_area": ee.Number(ind_range).round(),
+                    "eff_pot_hab_area": ee.Number(eph).round(),
+                    "connected_eff_pot_hab_area": ee.Number(ceph).round(),
+                    "occupied_eff_pot_hab_area": ee.Number(oeph).round(),
+                    "str_hab_area": ee.Number(strh).round(),
+                }
+            )
+
+        areas_fc = self.area_image.reduceRegions(
+            collection=self.states.filterBounds(self.historical_range_fc),
+            reducer=ee.Reducer.sum(),
+            scale=self.scale,
+            crs=self.crs,
+        ).map(_round)
+        self.table2storage(areas_fc, self.DEFAULT_BUCKET, blob)
+
     def calc_country_historical_range(self):
+
         bucket = self.gcsclient.get_bucket(self.DEFAULT_BUCKET)
         blob = f"ls_stats/{self.species}/country_historical_range"
         if bucket.get_blob(f"{blob}.geojson"):
@@ -262,6 +321,28 @@ class SCLStats(SCLTask):
         self.table2storage(country_hrs, self.DEFAULT_BUCKET, blob)
 
     def calc(self):
+        area = ee.Image.pixelArea().divide(1000000).updateMask(self.watermask)
+        str_hab_area = area.updateMask(self.structural_habitat)
+        range_area = area.updateMask(self.historical_range)
+        self.area_image = range_area.addBands(
+            [
+                str_hab_area,
+                self.scl_image.select(
+                    ["eff_pot_hab_area", "connected_eff_pot_hab_area"]
+                ),
+                self.occupied_habitat_image,
+            ]
+        ).rename(
+            [
+                "indigenous_range_area",
+                "str_hab_area",
+                "eff_pot_hab_area",
+                "connected_eff_pot_hab_area",
+                "occupied_eff_pot_hab_area",
+            ]
+        )
+
+        self.calc_state_areas()
         self.calc_country_historical_range()
         self.calc_landscapes(f"scl_{self.SPECIES}")
         self.calc_landscapes(f"scl_{self.RESTORATION}")
