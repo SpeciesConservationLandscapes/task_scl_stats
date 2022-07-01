@@ -243,6 +243,16 @@ class SCLStats(SCLTask):
                     "ls_total_area": ls_total_area,
                     "lscountry_area": ls_country_area,
                     "areas": ls_country_biome_numbers,
+                    "ls_occupied_eff_pot_hab_area": ls.get("occupied_eff_pot_hab_area"),
+                    "ls_eff_pot_hab_area": ls.get("eff_pot_hab_area"),
+                    "ls_connected_eff_pot_hab_area": ls.get(
+                        "eff_connected_pot_hab_area"
+                    ),
+                    "ls_connected_eff_pot_hab_area": ls.get(
+                        "connected_eff_pot_hab_area"
+                    ),
+                    "ls_structural_habitat_area": ls.get("structural_hab_area"),
+                    "ls_polygon_area": ls.get("total_polygon_area"),
                 }
                 if landscape_key == "scl_species":
                     _name = ls.get("name")
