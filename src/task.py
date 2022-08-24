@@ -237,17 +237,110 @@ class SCLStats(SCLTask):
                     ).keys()
                 ).map(get_ls_countries_biome_numbers)
 
+                def calc_hab_areas_state():
+                    country_code = ee.Number(country.get("isonumeric")).int()
+
+                    area = (
+                        ee.Image.pixelArea().divide(1000000).updateMask(self.watermask)
+                    )
+                    str_hab_area = area.updateMask(self.structural_habitat).rename(
+                        "str_hab_area"
+                    )
+                    habitat_image = (
+                        self.scl_image.addBands(
+                            [
+                                self.occupied_habitat_image.rename("occupied_hab_area"),
+                                str_hab_area,
+                            ]
+                        )
+                        .select(
+                            [
+                                "country",
+                                "str_hab_area",
+                                "eff_pot_hab_area",
+                                "connected_eff_pot_hab_area",
+                                "occupied_hab_area",
+                                "pa_area",
+                                "state",
+                            ]
+                        )
+                        .updateMask(self.scl_image.select("country").eq(country_code))
+                    )
+                    mode_band = ["country"]
+                    sum_bands = [
+                        "str_hab_area",
+                        "eff_pot_hab_area",
+                        "connected_eff_pot_hab_area",
+                        "occupied_hab_area",
+                        "pa_area",
+                    ]
+                    reducer = (
+                        ee.Reducer.mode()
+                        .forEach(mode_band)
+                        .combine(ee.Reducer.sum().forEach(sum_bands))
+                    )
+
+                    def get_stats(item):
+                        item = ee.Dictionary(item)
+                        country_id = item.get("country")
+                        state_id = item.get("state")
+                        country_name = (
+                            self.countries.filter(
+                                ee.Filter.eq("isonumeric", country_id)
+                            )
+                            .first()
+                            .get("iso2")
+                        )
+                        country_name = ee.String(
+                            ee.Algorithms.If(
+                                ee.String(country_name).equals("Jammu and Kashmir"),
+                                "IN",
+                                country_name,
+                            )
+                        )
+                        state_name = (
+                            self.states.filter(ee.Filter.eq("gadm1code", state_id))
+                            .first()
+                            .get("gadm1name")
+                        )
+                        c = country.get("iso2")
+                        return ee.Dictionary(
+                            {
+                                "state_id": state_id,
+                                "state_na": state_name,
+                                "st_str_hab_area": item.get("str_hab_area"),
+                                "st_eff_pot_hab_area": item.get("eff_pot_hab_area"),
+                                "st_con_eff_pot_hab_area": item.get(
+                                    "connected_eff_pot_hab_area"
+                                ),
+                                "st_occ_hab_area": item.get("occupied_hab_area"),
+                                "st_pa_area": item.get("pa_area"),
+                            }
+                        )
+
+                    return ee.List(
+                        habitat_image.reduceRegion(
+                            geometry=ls.geometry(),
+                            reducer=reducer.group(6, "state"),
+                            scale=self.scale,
+                            crs=self.crs,
+                            maxPixels=self.ee_max_pixels,
+                        ).get("groups")
+                    ).map(get_stats)
+
+                hab_areas = calc_hab_areas_state()
+                hab_areas_size = hab_areas.size()
+
                 props = {
                     "lsid": ls.get("dissolved_poly_id"),
                     "lscountry": country.get("iso2"),
                     "ls_total_area": ls_total_area,
                     "lscountry_area": ls_country_area,
                     "areas": ls_country_biome_numbers,
+                    "hab_areas": hab_areas,
+                    "n": hab_areas_size,
                     "ls_occupied_eff_pot_hab_area": ls.get("occupied_eff_pot_hab_area"),
                     "ls_eff_pot_hab_area": ls.get("eff_pot_hab_area"),
-                    "ls_connected_eff_pot_hab_area": ls.get(
-                        "eff_connected_pot_hab_area"
-                    ),
                     "ls_connected_eff_pot_hab_area": ls.get(
                         "connected_eff_pot_hab_area"
                     ),
@@ -268,7 +361,26 @@ class SCLStats(SCLTask):
                 get_ls_countries_biomes
             )
 
-        ls_countries_biomes_pas = landscapes.map(get_ls_countries_biomes_pas).flatten()
+        ls_countries_biomes_pas = (
+            landscapes.map(get_ls_countries_biomes_pas)
+            .flatten()
+            .filter(ee.Filter.gt("n", 0))
+            .select(
+                [
+                    "lsid",
+                    "lscountry",
+                    "ls_total_area",
+                    "lscountry_area",
+                    "areas",
+                    "hab_areas",
+                    "ls_occupied_eff_pot_hab_area",
+                    "ls_eff_pot_hab_area",
+                    "ls_connected_eff_pot_hab_area",
+                    "ls_structural_habitat_area",
+                    "ls_polygon_area",
+                ]
+            )
+        )
 
         blob = (
             f"ls_stats/{self.species}/{self.scenario}/{self.taskdate}/{landscape_key}"
