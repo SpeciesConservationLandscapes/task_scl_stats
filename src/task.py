@@ -179,7 +179,7 @@ class SCLStats(SCLTask):
 
     def calc_landscape_stats(self, landscape_key):
         bucket = self.gcsclient.get_bucket(self.DEFAULT_BUCKET)
-        blob = f"ls_stats/{self.scenario}/{self.taskdate}/scl_{landscape_key}"
+        blob = f"ls_stats/{self.species}/{self.scenario}/{self.taskdate}/scl_{landscape_key}"
 
         landscapes = self.calc_landscape_geometries(
             f"scl_{landscape_key}", self.states, "state", False
