@@ -418,8 +418,8 @@ class SCLStats(SCLTask):
         self.calc_landscape_stats(f"{self.SURVEY}")
         self.calc_landscape_stats(f"{self.RESTORATION}")
         self.calc_landscape_stats(f"{self.SPECIES}_{self.FRAGMENT}")
-        self.calc_landscape_stats(f"{self.SPECIES}_{self.FRAGMENT}")
-        self.calc_landscape_stats(f"{self.SPECIES}_{self.FRAGMENT}")
+        self.calc_landscape_stats(f"{self.SURVEY}_{self.FRAGMENT}")
+        self.calc_landscape_stats(f"{self.RESTORATION}_{self.FRAGMENT}")
 
     def check_inputs(self):
         super().check_inputs()
