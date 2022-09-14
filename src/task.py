@@ -62,6 +62,24 @@ class SCLStats(SCLTask):
             "static": True,
         },
     }
+    output_properties = {
+        "landscape": {"selectors": ["dissolved_poly_id"], "rename": ["lsid"]},
+        "country": {
+            "selectors": ["dissolved_poly_id", "countrynam", "iso2", "isonumeric"],
+            "rename": ["lsid", "country", "iso2", "isonumeric"],
+        },
+        "state": {
+            "selectors": [
+                "dissolved_poly_id",
+                "countrynam",
+                "iso2",
+                "isonumeric",
+                "gadm1name",
+                "gadm1code",
+            ],
+            "rename": ["lsid", "country", "iso2", "isonumeric", "state", "gadm1code"],
+        },
+    }
 
     def rounded_habitat_area(self, geom, img=None, band=None, scale=None):
         img = img or self.scl_image.select("eff_pot_hab_area")  # assumes unit=km2
@@ -106,7 +124,36 @@ class SCLStats(SCLTask):
     def occupied_image_habitat_path(self):
         return f"{self.ee_rootdir}/pothab/occupied_habitat"
 
-    def calc_landscapes(self, landscape_key):
+    def landscapes_fc_interections(self, landscapes, landscape_key, fc, type):
+        def intersections(landscape):
+            ls_features = fc.filterBounds(landscape.geometry())
+
+            def ls_feature_intersection(feature):
+                ls_feature_intersection = landscape.geometry().intersection(
+                    feature.geometry(), self.error_margin
+                )
+                properties = self.output_properties[type]["selectors"]
+                new_properties = self.output_properties[type]["rename"]
+
+                intersection_feature = (
+                    ee.Feature(ls_feature_intersection)
+                    .copyProperties(landscape)
+                    .copyProperties(feature)
+                )
+
+                return (
+                    ee.Feature(intersection_feature)
+                    .select(properties, new_properties)
+                    .set({"ls_key": landscape_key,})
+                )
+
+            return ls_features.map(ls_feature_intersection)
+
+        return landscapes.map(intersections).flatten()
+
+    def calc_landscape_geometries(
+        self, landscape_key, feature_collection, type, export
+    ):
         landscapes, landscapes_date = self.get_most_recent_featurecollection(
             self.inputs[landscape_key]["ee_path"]
         )
@@ -114,166 +161,174 @@ class SCLStats(SCLTask):
         if landscapes is None:
             return
 
-        def get_ls_countries_biomes_pas(ls):
-            ls_total_area = self.rounded_habitat_area(ls.geometry())
+        if type == "landscape":
+            landscape_geometries = landscapes
 
-            def get_ls_countries_biomes(country):
-                ls_country = ls.geometry().intersection(
-                    country.geometry(), self.error_margin
-                )
-                ls_country_area = self.rounded_habitat_area(ls_country)
-                ls_country_biomes = self.ecoregions.filterBounds(ls_country)
-
-                def get_ls_countries_biome_numbers(biome_num):
-                    biome_num = ee.Number.parse(biome_num).int()
-                    biome = ls_country_biomes.filter(
-                        ee.Filter.eq("BIOME_NUM", biome_num)
-                    )
-                    biome_geometry = (
-                        biome.union()
-                        .geometry()
-                        .intersection(ls_country, self.error_margin)
-                    )
-                    biome_name = ee.Feature(biome.first()).get("BIOME_NAME")
-
-                    ls_country_biome_pas = self.pas.filterBounds(biome_geometry)
-                    ls_country_biome_protected = (
-                        ls_country_biome_pas.union()
-                        .geometry()
-                        .intersection(biome_geometry, self.error_margin)
-                    )
-                    ls_country_biome_protected_area = self.rounded_habitat_area(
-                        ls_country_biome_protected
-                    )
-                    ls_country_biome_unprotected_area = self.rounded_habitat_area(
-                        biome_geometry.difference(ls_country_biome_protected)
-                    )
-
-                    ls_country_biome_kbas = self.kbas.filterBounds(biome_geometry)
-                    ls_country_biome_kbageom = (
-                        ls_country_biome_kbas.union()
-                        .geometry()
-                        .intersection(biome_geometry, self.error_margin)
-                    )
-                    ls_country_biome_kba_area = self.rounded_habitat_area(
-                        ls_country_biome_kbageom
-                    )
-                    ls_country_biome_nonkba_area = self.rounded_habitat_area(
-                        biome_geometry.difference(ls_country_biome_kbageom)
-                    )
-
-                    def get_ls_country_biome_pas(pa_id):
-                        ls_country_biome_pa_id = ee.Number.parse(pa_id).int()
-                        pa = ls_country_biome_pas.filter(
-                            ee.Filter.eq("WDPAID", ls_country_biome_pa_id)
-                        )
-                        ls_country_biome_pa_name = ee.Feature(pa.first()).get("NAME")
-                        ls_country_biome_pa_area = self.rounded_habitat_area(
-                            pa.geometry().intersection(
-                                biome_geometry, self.error_margin
-                            )
-                        )
-
-                        return ee.Dictionary(
-                            {
-                                "paname": ls_country_biome_pa_name,
-                                "paid": ls_country_biome_pa_id,
-                                "paarea": ls_country_biome_pa_area,
-                            }
-                        )
-
-                    ls_country_biome_pa_areas = ee.List(
-                        ee.Dictionary(
-                            ls_country_biome_pas.aggregate_histogram("WDPAID")
-                        ).keys()
-                    ).map(get_ls_country_biome_pas)
-
-                    ls_country_biome_kbas = self.kbas.filterBounds(biome_geometry)
-
-                    def get_ls_country_biome_kbas(kba_id):
-                        ls_country_biome_kba_id = ee.Number.parse(kba_id).int()
-                        kba = ls_country_biome_kbas.filter(
-                            ee.Filter.eq("SitRecID", ls_country_biome_kba_id)
-                        )
-                        ls_country_biome_kba_name = ee.Feature(kba.first()).get(
-                            "IntName"
-                        )
-                        ls_country_biome_kba_area = self.rounded_habitat_area(
-                            kba.geometry().intersection(
-                                biome_geometry, self.error_margin
-                            )
-                        )
-
-                        return ee.Dictionary(
-                            {
-                                "kbaname": ls_country_biome_kba_name,
-                                "kbaid": ls_country_biome_kba_id,
-                                "kbaarea": ls_country_biome_kba_area,
-                            }
-                        )
-
-                    ls_country_biome_kba_areas = ee.List(
-                        ee.Dictionary(
-                            ls_country_biome_kbas.aggregate_histogram("SitRecID")
-                        ).keys()
-                    ).map(get_ls_country_biome_kbas)
-
-                    return ee.Dictionary(
-                        {
-                            "biomeid": biome_num,
-                            "biomename": biome_name,
-                            "protected": ls_country_biome_protected_area,
-                            "unprotected": ls_country_biome_unprotected_area,
-                            "kba_area": ls_country_biome_kba_area,
-                            "nonkba_area": ls_country_biome_nonkba_area,
-                            "pas": ls_country_biome_pa_areas,
-                            "kbas": ls_country_biome_kba_areas,
-                        }
-                    )
-
-                ls_country_biome_numbers = ee.List(
-                    ee.Dictionary(
-                        ls_country_biomes.aggregate_histogram("BIOME_NUM")
-                    ).keys()
-                ).map(get_ls_countries_biome_numbers)
-
-                props = {
-                    "lsid": ls.get("dissolved_poly_id"),
-                    "lscountry": country.get("iso2"),
-                    "ls_total_area": ls_total_area,
-                    "lscountry_area": ls_country_area,
-                    "areas": ls_country_biome_numbers,
-                    "ls_occupied_eff_pot_hab_area": ls.get("occupied_eff_pot_hab_area"),
-                    "ls_eff_pot_hab_area": ls.get("eff_pot_hab_area"),
-                    "ls_connected_eff_pot_hab_area": ls.get(
-                        "eff_connected_pot_hab_area"
-                    ),
-                    "ls_connected_eff_pot_hab_area": ls.get(
-                        "connected_eff_pot_hab_area"
-                    ),
-                    "ls_structural_habitat_area": ls.get("structural_hab_area"),
-                    "ls_polygon_area": ls.get("total_polygon_area"),
-                }
-                if landscape_key == "scl_species":
-                    _name = ls.get("name")
-                    _class = ls.get("class")
-                    if _name is not None:
-                        props["lsname"] = _name
-                    if _class is not None:
-                        props["lsclass"] = _class
-
-                return ee.Feature(ls_country, props)
-
-            return self.countries.filterBounds(ls.geometry()).map(
-                get_ls_countries_biomes
+        else:
+            landscape_geometries = self.landscapes_fc_interections(
+                landscapes, landscape_key, feature_collection, type
             )
 
-        ls_countries_biomes_pas = landscapes.map(get_ls_countries_biomes_pas).flatten()
+        if export:
+            bucket = self.gcsclient.get_bucket(self.DEFAULT_BUCKET)
+            blob = f"ls_geometries/{self.species}/{self.scenario}/{self.taskdate}/by_{type}/{landscape_key}"
+            self.table2storage(landscape_geometries, self.DEFAULT_BUCKET, blob)
+            return
 
-        blob = (
-            f"ls_stats/{self.species}/{self.scenario}/{self.taskdate}/{landscape_key}"
+        return landscape_geometries
+
+    def calc_landscape_stats(self, landscape_key):
+        bucket = self.gcsclient.get_bucket(self.DEFAULT_BUCKET)
+        blob = f"ls_stats/{self.species}/{self.scenario}/{self.taskdate}/scl_{landscape_key}"
+
+        landscapes = self.calc_landscape_geometries(
+            f"scl_{landscape_key}", self.states, "state", False
         )
-        self.table2storage(ls_countries_biomes_pas, self.DEFAULT_BUCKET, blob)
+
+        def habitat_areas(feat):
+            area_stats = self.area_image.reduceRegion(
+                geometry=feat.geometry(),
+                reducer=ee.Reducer.sum(),
+                scale=self.scale,
+                crs=self.crs,
+                maxPixels=self.ee_max_pixels,
+            )
+            return {
+                "total_area": ee.Number(area_stats.get("total_area")).round(),
+                "indigenous_range_area": ee.Number(
+                    area_stats.get("indigenous_range_area")
+                ).round(),
+                "str_hab_area": ee.Number(area_stats.get("str_hab_area")).round(),
+                "eff_pot_hab_area": ee.Number(
+                    area_stats.get("eff_pot_hab_area")
+                ).round(),
+                "connected_eff_pot_hab_area": ee.Number(
+                    area_stats.get("connected_eff_pot_hab_area")
+                ).round(),
+                "occupied_eff_pot_hab_area": ee.Number(
+                    area_stats.get("occupied_eff_pot_hab_area")
+                ).round(),
+            }
+
+        def feature_area_stats(feat):
+            ls_state_stats = feat.set(habitat_areas(feat))
+
+            def ecoregion_stats(ecoregion):
+                ls_ecoregion = ee.Feature(
+                    ecoregion.geometry().intersection(feat.geometry())
+                )
+
+                ecoregion_area_stats = habitat_areas(ls_ecoregion)
+
+                ecoregion_properties = {
+                    "biome_name": ecoregion.get("BIOME_NAME"),
+                    "biome_id": ecoregion.get("BIOME_NUM"),
+                    "ecoregion_name": ecoregion.get("ECO_NAME"),
+                    "ecoregion_id": ecoregion.get("ECO_ID"),
+                }
+                stats = {**ecoregion_properties, **ecoregion_area_stats}
+
+                return ee.Feature(None, {"stats": stats})
+
+            def kba_stats(kba):
+                ls_kba = ee.Feature(kba.geometry().intersection(feat.geometry()))
+                kba_area_stats = habitat_areas(ls_kba)
+                kba_properties = {
+                    "kba_name": kba.get("IntName"),
+                    "kba_id": kba.get("SitRecID"),
+                }
+                stats = {**kba_properties, **kba_area_stats}
+
+                return ee.Feature(None, {"stats": stats}).set(stats)
+
+            def pa_stats(pa):
+                ls_pa = ee.Feature(pa.geometry().intersection(feat.geometry()))
+                pa_area_stats = habitat_areas(ls_pa)
+                pa_properties = {
+                    "pa_name": pa.get("NAME"),
+                    "pa_id": pa.get("WDPAID"),
+                }
+                stats = {**pa_properties, **pa_area_stats}
+
+                return ee.Feature(None, {"stats": stats}).set(stats)
+
+            ecoregions = self.ecoregions.filterBounds(feat.geometry()).map(
+                ecoregion_stats
+            )
+            ecoregion_area_stats = ecoregions.aggregate_array("stats")
+
+            kbas = self.kbas.filterBounds(feat.geometry()).map(kba_stats)
+            kba_area_stats = kbas.aggregate_array("stats")
+
+            pas = self.pas.filterBounds(feat.geometry()).map(pa_stats)
+            pa_area_stats = pas.aggregate_array("stats")
+
+            return (
+                ls_state_stats.set(ee.Dictionary({"ecoregions": ecoregion_area_stats}))
+                .set(ee.Dictionary({"kbas": kba_area_stats}))
+                .set(ee.Dictionary({"pas": pa_area_stats}))
+                .set(
+                    {
+                        "kba_total_area": kbas.aggregate_sum("total_area"),
+                        "kba_indigenous_range_area": kbas.aggregate_sum(
+                            "indigenous_range_area"
+                        ),
+                        "kba_str_hab_area": kbas.aggregate_sum("str_hab_area"),
+                        "kba_eff_pot_hab_area": kbas.aggregate_sum("eff_pot_hab_area"),
+                        "kba_connected_eff_pot_hab_area": kbas.aggregate_sum(
+                            "connected_eff_pot_hab_area"
+                        ),
+                        "kba_occupied_eff_pot_hab_area": kbas.aggregate_sum(
+                            "occupied_eff_pot_hab_area"
+                        ),
+                        "pa_total_area": pas.aggregate_sum("total_area"),
+                        "pa_indigenous_range_area": pas.aggregate_sum(
+                            "indigenous_range_area"
+                        ),
+                        "pa_str_hab_area": pas.aggregate_sum("str_hab_area"),
+                        "pa_eff_pot_hab_area": pas.aggregate_sum("eff_pot_hab_area"),
+                        "pa_connected_eff_pot_hab_area": pas.aggregate_sum(
+                            "connected_eff_pot_hab_area"
+                        ),
+                        "pa_occupied_eff_pot_hab_area": pas.aggregate_sum(
+                            "occupied_eff_pot_hab_area"
+                        ),
+                    }
+                )
+            )
+
+        area_stats = landscapes.map(feature_area_stats)
+        self.table2storage(area_stats, self.DEFAULT_BUCKET, blob)
+
+    def export_landscape_geometries(self, types, feature_collections):
+        for i in range(len(types)):
+            self.calc_landscape_geometries(
+                f"scl_{self.SPECIES}", feature_collections[i], types[i], True
+            )
+            self.calc_landscape_geometries(
+                f"scl_{self.RESTORATION}", feature_collections[i], types[i], True
+            )
+            self.calc_landscape_geometries(
+                f"scl_{self.SURVEY}", feature_collections[i], types[i], True
+            )
+            self.calc_landscape_geometries(
+                f"scl_{self.SPECIES}_{self.FRAGMENT}",
+                feature_collections[i],
+                types[i],
+                True,
+            )
+            self.calc_landscape_geometries(
+                f"scl_{self.RESTORATION}_{self.FRAGMENT}",
+                feature_collections[i],
+                types[i],
+                True,
+            )
+            self.calc_landscape_geometries(
+                f"scl_{self.SURVEY}_{self.FRAGMENT}",
+                feature_collections[i],
+                types[i],
+                True,
+            )
 
     def calc_state_areas(self):
         bucket = self.gcsclient.get_bucket(self.DEFAULT_BUCKET)
@@ -334,8 +389,9 @@ class SCLStats(SCLTask):
         area = ee.Image.pixelArea().divide(1000000).updateMask(self.watermask)
         str_hab_area = area.updateMask(self.structural_habitat)
         range_area = area.updateMask(self.historical_range)
-        self.area_image = range_area.addBands(
+        self.area_image = area.addBands(
             [
+                range_area,
                 str_hab_area,
                 self.scl_image.select(
                     ["eff_pot_hab_area", "connected_eff_pot_hab_area"]
@@ -344,6 +400,7 @@ class SCLStats(SCLTask):
             ]
         ).rename(
             [
+                "total_area",
                 "indigenous_range_area",
                 "str_hab_area",
                 "eff_pot_hab_area",
@@ -354,12 +411,15 @@ class SCLStats(SCLTask):
 
         self.calc_state_areas()
         self.calc_country_historical_range()
-        self.calc_landscapes(f"scl_{self.SPECIES}")
-        self.calc_landscapes(f"scl_{self.RESTORATION}")
-        self.calc_landscapes(f"scl_{self.SURVEY}")
-        self.calc_landscapes(f"scl_{self.SPECIES}_{self.FRAGMENT}")
-        self.calc_landscapes(f"scl_{self.RESTORATION}_{self.FRAGMENT}")
-        self.calc_landscapes(f"scl_{self.SURVEY}_{self.FRAGMENT}")
+        self.export_landscape_geometries(
+            ["landscape", "state", "country"], [None, self.states, self.countries]
+        )
+        self.calc_landscape_stats(f"{self.SPECIES}")
+        self.calc_landscape_stats(f"{self.SURVEY}")
+        self.calc_landscape_stats(f"{self.RESTORATION}")
+        self.calc_landscape_stats(f"{self.SPECIES}_{self.FRAGMENT}")
+        self.calc_landscape_stats(f"{self.SURVEY}_{self.FRAGMENT}")
+        self.calc_landscape_stats(f"{self.RESTORATION}_{self.FRAGMENT}")
 
     def check_inputs(self):
         super().check_inputs()
