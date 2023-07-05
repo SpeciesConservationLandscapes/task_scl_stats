@@ -144,7 +144,11 @@ class SCLStats(SCLTask):
                 return (
                     ee.Feature(intersection_feature)
                     .select(properties, new_properties)
-                    .set({"ls_key": landscape_key,})
+                    .set(
+                        {
+                            "ls_key": landscape_key,
+                        }
+                    )
                 )
 
             return ls_features.map(ls_feature_intersection)
@@ -360,7 +364,6 @@ class SCLStats(SCLTask):
         self.table2storage(areas_fc, self.DEFAULT_BUCKET, blob)
 
     def calc_country_historical_range(self):
-
         bucket = self.gcsclient.get_bucket(self.DEFAULT_BUCKET)
         blob = f"ls_stats/{self.species}/country_historical_range"
         if bucket.get_blob(f"{blob}.geojson"):
